@@ -10,6 +10,11 @@ import {
 import type { IUser } from '../../types/canteen.types';
 import { APP_CONFIG } from '../../constants/canteen.constants';
 
+import {
+  validateOperatorEnrollment,
+  validateOperatorRemoval,
+} from '../../utils/operatorValidation';
+
 interface OperatorAuthManagementProps {
   currentUser: IUser;
   operators: IUser[];
@@ -57,17 +62,9 @@ export const OperatorAuthManagement: React.FC<OperatorAuthManagementProps> = ({
     setErrorMessage(null);
     setStatusMessage(null);
 
-    // Military check: strictly max 1 NCOIC & 1 JCOIC
-    if (newRole === 'NCOIC' && existingNcoic) {
-      setErrorMessage(
-        'Military Rule Violation: An NCOIC already exists. Maximum 1 NCOIC is permitted at RTS.',
-      );
-      return;
-    }
-    if (newRole === 'JCOIC' && existingJcoic) {
-      setErrorMessage(
-        'Military Rule Violation: A JCOIC already exists. Maximum 1 JCOIC is permitted at RTS.',
-      );
+    const enrollmentValidation = validateOperatorEnrollment(newRole, operators);
+    if (!enrollmentValidation.isValid) {
+      setErrorMessage(enrollmentValidation.error || 'Military Rule Violation');
       return;
     }
 
@@ -103,27 +100,13 @@ export const OperatorAuthManagement: React.FC<OperatorAuthManagementProps> = ({
     setErrorMessage(null);
     setStatusMessage(null);
 
+    const removalValidation = validateOperatorRemoval(currentUser, targetOp);
+    if (!removalValidation.isValid) {
+      setErrorMessage(removalValidation.error || 'Revocation disallowed.');
+      return;
+    }
+
     const targetId = targetOp._id || targetOp.userId || targetOp.id || '';
-    const myId = currentUser._id || currentUser.userId || currentUser.id || '';
-
-    // Rule 1: Self-removal is strictly blocked
-    if (targetOp.bdNo === currentUser.bdNo || (targetId && targetId === myId)) {
-      setErrorMessage(
-        'Self-removal strictly prohibited. You cannot revoke your own military credentials.',
-      );
-      return;
-    }
-
-    // Rule 2: Mutual counterpart removal only
-    if (currentUser.role === 'NCOIC' && targetOp.role !== 'JCOIC') {
-      setErrorMessage('As NCOIC, you may only revoke your JCOIC counterpart.');
-      return;
-    }
-    if (currentUser.role === 'JCOIC' && targetOp.role !== 'NCOIC') {
-      setErrorMessage('As JCOIC, you may only revoke your NCOIC counterpart.');
-      return;
-    }
-
     const confirmMsg = `Confirm revocation of military operator credentials for ${targetOp.rank} ${targetOp.name} (${targetOp.role})?`;
     if (!window.confirm(confirmMsg)) return;
 
