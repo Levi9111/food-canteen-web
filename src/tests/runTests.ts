@@ -12,7 +12,7 @@ console.log(`Failed: ${results.failed}`);
 if (results.failed > 0) {
   console.error('Test Failures:');
   results.errors.forEach((e) => console.error(` - ${e}`));
-  process.exit(1);
+  throw new Error(`Canteen domain tests failed with ${results.failed} errors.`);
 } else {
   console.log('All canteen domain unit tests passed successfully!');
 }
