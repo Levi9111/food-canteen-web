@@ -1,0 +1,5 @@
+1. staffs will be provided a link where they will be able to see their all daily monthly expenses 
+    and also when and how much they diposited and everything else
+
+2. admin's bkash and bank account number, whattsapp number
+     will be available and easily copiable for better expereice
