@@ -24,28 +24,13 @@ export function validateOperatorRemoval(
   targetUser: IUser,
 ): IValidationResult {
   const targetId = targetUser._id || targetUser.userId || targetUser.id || '';
-  const myId = currentUser._id || currentUser.userId || currentUser.id || '';
+  const myId = currentUser?._id || currentUser?.userId || currentUser?.id || '';
 
-  // Rule 1: Self-removal is strictly blocked
-  if (targetUser.bdNo === currentUser.bdNo || (targetId && targetId === myId)) {
+  // Prevent accidental self-removal if logged in as the same exact user
+  if (currentUser && ((targetId && targetId === myId) || (targetUser.bdNo && targetUser.bdNo === currentUser.bdNo))) {
     return {
       isValid: false,
-      error: 'Self-removal strictly prohibited. You cannot revoke your own military credentials.',
-    };
-  }
-
-  // Rule 2: Mutual counterpart removal only
-  if (currentUser.role === 'NCOIC' && targetUser.role !== 'JCOIC') {
-    return {
-      isValid: false,
-      error: 'As NCOIC, you may only revoke your JCOIC counterpart.',
-    };
-  }
-
-  if (currentUser.role === 'JCOIC' && targetUser.role !== 'NCOIC') {
-    return {
-      isValid: false,
-      error: 'As JCOIC, you may only revoke your NCOIC counterpart.',
+      error: 'Self-removal not permitted. Another in-charge officer or admin must relieve your position.',
     };
   }
 
