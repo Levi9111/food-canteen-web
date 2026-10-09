@@ -368,11 +368,39 @@ body {
   border-radius: var(--radius-sm);
   outline: none;
   transition: border-color 0.15s ease;
+  color-scheme: light dark;
 }
 
 .input-control:focus, .select-control:focus {
   border-color: var(--baf-gold);
   box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.2);
+}
+
+select option {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .input-control,
+[data-theme='dark'] .select-control,
+[data-theme='dark'] input[type="month"],
+[data-theme='dark'] input[type="date"],
+[data-theme='dark'] select {
+  color-scheme: dark;
+  background-color: var(--surface) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--card-border-light);
+}
+
+[data-theme='dark'] select option {
+  background-color: #131D31 !important;
+  color: #F8FAFC !important;
+}
+
+[data-theme='dark'] input[type="month"]::-webkit-calendar-picker-indicator,
+[data-theme='dark'] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
+  cursor: pointer;
 }
 
 /* Room Grid (16 Rooms) */
