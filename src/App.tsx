@@ -16,6 +16,7 @@ import { DailyRoomGrid } from './components/RecruitsCanteen/DailyRoomGrid';
 import { MonthlyMatrixView } from './components/RecruitsCanteen/MonthlyMatrixView';
 import { StaffDailyEntry } from './components/PStaffCanteen/StaffDailyEntry';
 import { StaffStatementView } from './components/PStaffCanteen/StaffStatementView';
+import { PStaffMonthlyMatrixView } from './components/PStaffCanteen/PStaffMonthlyMatrixView';
 import { AuditDashboard } from './components/MonthlyAudit/AuditDashboard';
 import { OperatorAuthManagement } from './components/Settings/OperatorAuthManagement';
 import { StructureManagement } from './components/Settings/StructureManagement';
@@ -24,30 +25,21 @@ import type { IUser, ISquadron, IEntry, IPStaff } from './types/canteen.types';
 
 const queryClient = new QueryClient();
 
-// Initial seed data
+// Initial seed data: Cpl Shanjid Ahmad as NCOIC, JCOIC vacant
 const INITIAL_CURRENT_USER: IUser = {
   _id: 'usr-1',
   userId: 'usr-1',
-  username: 'ncoic.tariqul',
-  name: 'Md Tariqul Islam',
-  rank: 'Sgt',
-  bdNo: '512044',
+  username: 'ncoic',
+  name: 'Shanjid Ahmad',
+  rank: 'Cpl',
+  trade: 'E&I Fitter',
+  bdNo: 'BD/472770',
   role: 'NCOIC',
   isActive: true,
 };
 
 const INITIAL_OPERATORS: IUser[] = [
   INITIAL_CURRENT_USER,
-  {
-    _id: 'usr-2',
-    userId: 'usr-2',
-    username: 'jcoic.kamal',
-    name: 'Mostafa Kamal',
-    rank: 'WO',
-    bdNo: '489110',
-    role: 'JCOIC',
-    isActive: true,
-  },
 ];
 
 const INITIAL_ENTRIES: IEntry[] = [
@@ -162,6 +154,7 @@ type TNavTab =
   | 'RECRUITS_DAILY'
   | 'RECRUITS_MATRIX'
   | 'STAFF_DAILY'
+  | 'STAFF_MATRIX'
   | 'STAFF_STATEMENT'
   | 'AUDIT'
   | 'OPERATORS'
@@ -192,12 +185,41 @@ export function CanteenApp() {
   // Core Data States with localStorage persistence
   const [currentUser, setCurrentUser] = useState<IUser>(() => {
     const saved = localStorage.getItem('baf_currentUser');
-    return saved ? JSON.parse(saved) : INITIAL_CURRENT_USER;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.name === 'Md Tariqul Islam' || parsed.username === 'ncoic.tariqul') {
+          return INITIAL_CURRENT_USER;
+        }
+        return parsed;
+      } catch {
+        // Ignore JSON error
+      }
+    }
+    return INITIAL_CURRENT_USER;
   });
 
   const [operators, setOperators] = useState<IUser[]>(() => {
     const saved = localStorage.getItem('baf_operators');
-    return saved ? JSON.parse(saved) : INITIAL_OPERATORS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const sanitized = parsed
+            .map((op: IUser) => {
+              if (op.name === 'Md Tariqul Islam' || op.username === 'ncoic.tariqul') {
+                return INITIAL_CURRENT_USER;
+              }
+              return op;
+            })
+            .filter((op: IUser) => op.role !== 'JCOIC');
+          if (sanitized.length > 0) return sanitized;
+        }
+      } catch {
+        // Ignore JSON error
+      }
+    }
+    return INITIAL_OPERATORS;
   });
 
   const [entries, setEntries] = useState<IEntry[]>(() => {
@@ -366,6 +388,7 @@ export function CanteenApp() {
       username: op.username || '',
       name: op.name || '',
       rank: op.rank || 'Sgt',
+      trade: op.trade || '',
       bdNo: op.bdNo || '',
       role: op.role || 'NCOIC',
       isActive: true,
@@ -378,23 +401,25 @@ export function CanteenApp() {
   const handleDeleteOperator = async (
     id: string,
   ): Promise<{ success: boolean; error?: string }> => {
-    setOperators((prev) => prev.filter((o) => (o._id || o.userId) !== id));
+    setOperators((prev) => {
+      const remaining = prev.filter((o) => (o._id || o.userId || o.id) !== id);
+      return remaining;
+    });
+    // If the currently active session user was the one removed, revert to baseline NCOIC
+    if (currentUser._id === id || currentUser.userId === id || currentUser.id === id) {
+      setCurrentUser(INITIAL_CURRENT_USER);
+    }
     return { success: true };
   };
 
-  // Switch Operator Duty Role (for demonstration pair-programming)
+  // Switch Operator Duty Role
   const handleSwitchDutyRole = () => {
     const nextRole = currentUser.role === 'NCOIC' ? 'JCOIC' : 'NCOIC';
     const target = operators.find((o) => o.role === nextRole);
     if (target) {
       setCurrentUser(target);
     } else {
-      setCurrentUser((prev) => ({
-        ...prev,
-        role: nextRole,
-        name: nextRole === 'JCOIC' ? 'Mostafa Kamal' : 'Md Tariqul Islam',
-        rank: nextRole === 'JCOIC' ? 'WO' : 'Sgt',
-      }));
+      alert(`${nextRole} position is currently vacant. You can appoint one in Duty Appointments.`);
     }
   };
 
@@ -485,6 +510,14 @@ export function CanteenApp() {
         </button>
 
         <button
+          className={`nav-tab-btn ${activeTab === 'STAFF_MATRIX' ? 'active' : ''}`}
+          onClick={() => setActiveTab('STAFF_MATRIX')}
+        >
+          <Table size={15} />
+          <span>P-STAFF MATRIX</span>
+        </button>
+
+        <button
           className={`nav-tab-btn ${activeTab === 'STAFF_STATEMENT' ? 'active' : ''}`}
           onClick={() => setActiveTab('STAFF_STATEMENT')}
         >
@@ -505,7 +538,7 @@ export function CanteenApp() {
           onClick={() => setActiveTab('OPERATORS')}
         >
           <ShieldCheck size={15} />
-          <span>OPERATORS (10)</span>
+          <span>DUTY APPOINTMENTS</span>
         </button>
 
         <button
@@ -513,7 +546,7 @@ export function CanteenApp() {
           onClick={() => setActiveTab('STRUCTURE')}
         >
           <Building size={15} />
-          <span>STRUCTURE (8,9)</span>
+          <span>STRUCTURE</span>
         </button>
 
         <button
@@ -588,7 +621,18 @@ export function CanteenApp() {
           />
         )}
 
-        {/* TAB 4: P-Staff Statements View */}
+        {/* TAB 4: P-Staff Monthly Matrix */}
+        {activeTab === 'STAFF_MATRIX' && (
+          <PStaffMonthlyMatrixView
+            staffList={staffList}
+            onSelectStaff={(st) => {
+              setStatementStaff(st);
+              setActiveTab('STAFF_STATEMENT');
+            }}
+          />
+        )}
+
+        {/* TAB 5: P-Staff Statements View */}
         {activeTab === 'STAFF_STATEMENT' && (
           <StaffStatementView
             staff={

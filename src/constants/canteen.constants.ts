@@ -24,6 +24,6 @@ export const APP_CONFIG = {
     bkash: '01711-000000 (Personal)',
     bankAccount: 'Trust Bank Ltd, BAF Base Paharkanchanpur Branch, A/C: 0012-0310001234',
     whatsapp: '+880 1711-000000',
-    officer: 'Sgt Tariqul Islam (NCOIC Canteen)',
+    officer: 'Cpl Shanjid Ahmad (NCOIC Canteen, Trade: E&I Fitter, BD/472770)',
   },
 };

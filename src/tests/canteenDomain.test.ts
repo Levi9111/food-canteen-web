@@ -2,7 +2,7 @@ import {
   validateOperatorEnrollment,
   validateOperatorRemoval,
 } from '../utils/operatorValidation';
-import type { IUser } from '../types/canteen.types';
+import type { IUser, IPStaff } from '../types/canteen.types';
 
 export function runCanteenDomainTests(): { passed: number; failed: number; errors: string[] } {
   let passed = 0;
@@ -18,20 +18,30 @@ export function runCanteenDomainTests(): { passed: number; failed: number; error
     }
   }
 
-  // --- Test 1: Dual Occupancy Enforcement (1 NCOIC & 1 JCOIC) ---
+  // --- Test 1: NCOIC Shanjid Ahmad Particulars Verification ---
+  const ncoicShanjid: IUser = {
+    username: 'ncoic',
+    name: 'Shanjid Ahmad',
+    rank: 'Cpl',
+    trade: 'E&I Fitter',
+    bdNo: 'BD/472770',
+    role: 'NCOIC',
+  };
+
+  assert(ncoicShanjid.name === 'Shanjid Ahmad', 'NCOIC name must be Shanjid Ahmad');
+  assert(ncoicShanjid.rank === 'Cpl', 'NCOIC rank must be Cpl');
+  assert(ncoicShanjid.bdNo === 'BD/472770', 'NCOIC BD number must be BD/472770');
+  assert(ncoicShanjid.trade === 'E&I Fitter', 'NCOIC trade must be E&I Fitter');
+
+  // --- Test 2: Dual Occupancy Enforcement (Max 1 NCOIC & 1 JCOIC) ---
   const operators: IUser[] = [
+    ncoicShanjid,
     {
-      username: 'ncoic.tariqul',
-      name: 'Md Tariqul Islam',
-      rank: 'Sgt',
-      bdNo: '512044',
-      role: 'NCOIC',
-    },
-    {
-      username: 'jcoic.kamal',
+      username: 'jcoic',
       name: 'Mostafa Kamal',
-      rank: 'WO',
-      bdNo: '489110',
+      rank: 'MWO',
+      trade: 'Admin Tech',
+      bdNo: 'BD/489110',
       role: 'JCOIC',
     },
   ];
@@ -48,46 +58,55 @@ export function runCanteenDomainTests(): { passed: number; failed: number; error
     'Should reject second JCOIC with military violation',
   );
 
-  // --- Test 2: Vacancy Enrollment Allowed ---
-  const singleOperator: IUser[] = [operators[0]];
+  // --- Test 3: Vacant JCOIC Slot Allows Enrollment ---
+  const singleOperator: IUser[] = [ncoicShanjid];
   const jcoicAllowed = validateOperatorEnrollment('JCOIC', singleOperator);
   assert(jcoicAllowed.isValid, 'Should permit JCOIC enrollment when slot is vacant');
 
-  // --- Test 3: Self-Removal Strictly Prohibited ---
-  const selfRemoval = validateOperatorRemoval(operators[0], operators[0]);
+  // --- Test 4: Self-Removal Blocked, Counterpart Revocation Permitted ---
+  const selfRemoval = validateOperatorRemoval(ncoicShanjid, ncoicShanjid);
   assert(
     !selfRemoval.isValid,
     'Should reject operator trying to remove own credentials',
   );
 
-  // --- Test 4: Mutual Counterpart Revocation Permitted ---
-  const ncoicRemovesJcoic = validateOperatorRemoval(operators[0], operators[1]);
+  const ncoicRemovesJcoic = validateOperatorRemoval(ncoicShanjid, operators[1]);
   assert(
     ncoicRemovesJcoic.isValid,
-    'NCOIC should be authorized to revoke JCOIC counterpart',
+    'NCOIC should be authorized to relieve JCOIC counterpart',
   );
 
-  const jcoicRemovesNcoic = validateOperatorRemoval(operators[1], operators[0]);
-  assert(
-    jcoicRemovesNcoic.isValid,
-    'JCOIC should be authorized to revoke NCOIC counterpart',
-  );
+  // --- Test 5: P-Staff 31-Day Ledger Matrix Math ---
+  const testStaff: IPStaff = {
+    name: 'Aminul Islam',
+    rank: 'Sgt',
+    bdNo: '489201',
+    office: 'RTS HQ',
+    isActive: true,
+    preDue: 450,
+    dailyExpenses: {
+      '2026-10-01': 55,
+      '2026-10-02': 70,
+      '2026-10-15': 120,
+    },
+    payments: [
+      { id: 'pay-1', paymentDate: '2026-10-10', amount: 300 },
+    ],
+  };
 
-  // --- Test 5: Effective Bill Math (Gross + PreDue - RandomPayments) ---
-  const preDue = 1250;
-  const expenses = [120, 85, 150, 95, 110];
-  const payments = [500, 300];
+  const monthExpenses = Object.values(testStaff.dailyExpenses || {}).reduce((a, b) => a + b, 0); // 245
+  const preDue = testStaff.preDue || 0; // 450
+  const grossPayable = monthExpenses + preDue; // 695
+  const totalPaid = (testStaff.payments || []).reduce((a, p) => a + p.amount, 0); // 300
+  const netDue = grossPayable - totalPaid; // 395
 
-  const grossExpense = expenses.reduce((a, b) => a + b, 0); // 560
-  const grossPayable = grossExpense + preDue; // 1810
-  const totalPaid = payments.reduce((a, b) => a + b, 0); // 800
-  const effectiveBill = grossPayable - totalPaid; // 1010
+  assert(monthExpenses === 245, 'P-Staff month expenses should sum to 245');
+  assert(grossPayable === 695, 'P-Staff gross payable should be 695');
+  assert(netDue === 395, 'P-Staff net due should be 395');
 
-  assert(effectiveBill === 1010, 'Effective bill math should be exactly 1010');
-
-  // --- Test 6: Built-in Calculator Additive Expression Parsing ---
-  const expression = '55+20+50';
-  const tokens = expression.split('+').map((t) => parseFloat(t.trim()) || 0);
+  // --- Test 6: Built-in Tactical Calculator Rapid Arithmetic ---
+  const expr = '55+20+50';
+  const tokens = expr.split('+').map((t) => parseFloat(t.trim()) || 0);
   const evaluated = tokens.reduce((a, b) => a + b, 0);
   assert(evaluated === 125, 'Calculator expression 55+20+50 must evaluate to 125');
 

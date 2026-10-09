@@ -23,6 +23,7 @@ export interface IUser {
   username: string;
   name: string;
   rank: TBafRank | string;
+  trade?: string;
   bdNo: string;
   email?: string;
   role: TManagerRole | string;
