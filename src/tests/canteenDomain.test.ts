@@ -2,7 +2,16 @@ import {
   validateOperatorEnrollment,
   validateOperatorRemoval,
 } from '../utils/operatorValidation';
-import type { IUser, IPStaff } from '../types/canteen.types';
+import type { IUser, IPStaff, ISquadron } from '../types/canteen.types';
+import {
+  cascadeSquadronRename,
+  validateSquadronRename,
+} from '../utils/squadronCascade';
+import {
+  validateRoomAddition,
+  validateRoomDeletion,
+  validateSquadronDeletion,
+} from '../utils/structureSafety';
 
 export function runCanteenDomainTests(): { passed: number; failed: number; errors: string[] } {
   let passed = 0;
@@ -109,6 +118,90 @@ export function runCanteenDomainTests(): { passed: number; failed: number; error
   const tokens = expr.split('+').map((t) => parseFloat(t.trim()) || 0);
   const evaluated = tokens.reduce((a, b) => a + b, 0);
   assert(evaluated === 125, 'Calculator expression 55+20+50 must evaluate to 125');
+
+  // --- Test 7: Squadron Rename Cascade Logic ---
+  const initialSquadrons: ISquadron[] = [
+    { name: 'Sadruddin', rooms: ['Room 1', 'Room 2', 'Room 3'] },
+    { name: 'Liakot Ali', rooms: ['Room 1', 'Room 2'] },
+  ];
+  const initialExpenses: Record<string, number> = {
+    '54|Sadruddin|Room 1|2026-10-01': 350,
+    '54|Sadruddin|Room 2|2026-10-01': 280,
+    '54|Liakot Ali|Room 1|2026-10-01': 400,
+  };
+  const initialPreDues: Record<string, number> = {
+    '54|Sadruddin|Room 1': 1200,
+    '54|Liakot Ali|Room 1': 800,
+  };
+  const initialPaid: Record<string, number> = {
+    '54|Sadruddin|Room 1': 1000,
+  };
+
+  const cascadeResult = cascadeSquadronRename(
+    'Sadruddin',
+    'Matiur Rahman',
+    initialSquadrons,
+    initialExpenses,
+    initialPreDues,
+    initialPaid,
+  );
+
+  assert(cascadeResult.affectedLedgerCount === 2, 'Cascade should affect 2 expense records for Sadruddin');
+  assert(
+    cascadeResult.updatedSquadrons[0]?.name === 'Matiur Rahman',
+    'Squadron name must be updated to Matiur Rahman',
+  );
+  assert(
+    cascadeResult.updatedExpenses['54|Matiur Rahman|Room 1|2026-10-01'] === 350,
+    'Expense key must be updated to Matiur Rahman with preserved amount',
+  );
+  assert(
+    cascadeResult.updatedExpenses['54|Liakot Ali|Room 1|2026-10-01'] === 400,
+    'Unrelated Liakot Ali expense must remain untouched',
+  );
+  assert(
+    cascadeResult.updatedPreDues['54|Matiur Rahman|Room 1'] === 1200,
+    'Pre-due key must cascade to Matiur Rahman',
+  );
+  assert(
+    cascadeResult.updatedPaid['54|Matiur Rahman|Room 1'] === 1000,
+    'Paid key must cascade to Matiur Rahman',
+  );
+
+  // --- Test 8: Squadron Rename Validation ---
+  const validRename = validateSquadronRename('Sadruddin', 'Matiur Rahman', initialSquadrons);
+  assert(validRename.isValid, 'Valid squadron rename should pass validation');
+
+  const collisionRename = validateSquadronRename('Sadruddin', 'Liakot Ali', initialSquadrons);
+  assert(!collisionRename.isValid, 'Rename to existing squadron must be rejected with collision error');
+
+  const identicalRename = validateSquadronRename('Sadruddin', 'Sadruddin', initialSquadrons);
+  assert(!identicalRename.isValid, 'Rename to identical name must be rejected');
+
+  // --- Test 9: Barrack Room Addition Safety ---
+  const existingRooms = ['Room 1', 'Room 2', 'Room 3'];
+  const validRoomAdd = validateRoomAddition('Room 4', existingRooms);
+  assert(validRoomAdd.isValid, 'Room 4 addition should be valid');
+
+  const duplicateRoomAdd = validateRoomAddition('room 2', existingRooms);
+  assert(!duplicateRoomAdd.isValid, 'Duplicate room addition (case-insensitive) must be rejected');
+
+  const emptyRoomAdd = validateRoomAddition('   ', existingRooms);
+  assert(!emptyRoomAdd.isValid, 'Empty room addition must be rejected');
+
+  // --- Test 10: Barrack Room Deletion Safety ---
+  const validRoomDel = validateRoomDeletion('Room 3', existingRooms);
+  assert(validRoomDel.isValid, 'Deleting Room 3 with 3 rooms remaining should be permitted');
+
+  const finalRoomDel = validateRoomDeletion('Room 1', ['Room 1']);
+  assert(!finalRoomDel.isValid, 'Deleting the final remaining room in a squadron must be blocked');
+
+  // --- Test 11: Squadron Deletion Safety ---
+  const validSqnDel = validateSquadronDeletion('Sadruddin', initialSquadrons);
+  assert(validSqnDel.isValid, 'Deleting squadron with 2 squadrons active should be permitted');
+
+  const finalSqnDel = validateSquadronDeletion('Sadruddin', [initialSquadrons[0]]);
+  assert(!finalSqnDel.isValid, 'Deleting the only active squadron in canteen must be blocked');
 
   return { passed, failed, errors };
 }
