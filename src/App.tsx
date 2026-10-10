@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Building,
   Search,
+  Settings,
 } from 'lucide-react';
 import { Header } from './components/Header';
 import { AdminContactModal } from './components/AdminContactModal';
@@ -18,10 +19,17 @@ import { StaffDailyEntry } from './components/PStaffCanteen/StaffDailyEntry';
 import { StaffStatementView } from './components/PStaffCanteen/StaffStatementView';
 import { PStaffMonthlyMatrixView } from './components/PStaffCanteen/PStaffMonthlyMatrixView';
 import { AuditDashboard } from './components/MonthlyAudit/AuditDashboard';
-import { OperatorAuthManagement } from './components/Settings/OperatorAuthManagement';
-import { StructureManagement } from './components/Settings/StructureManagement';
+import { SettingsHub } from './components/Settings/SettingsHub';
+import { SquadronManagementView } from './components/Settings/SquadronManagementView';
+import { DutyOperatorManagementView } from './components/Settings/DutyOperatorManagementView';
 import { StaffPublicLookup } from './components/PublicPortal/StaffPublicLookup';
-import type { IUser, ISquadron, IEntry, IPStaff } from './types/canteen.types';
+import type { IUser, ISquadron, IEntry, IPStaff, TSettingsSubView } from './types/canteen.types';
+import { cascadeSquadronRename } from './utils/squadronCascade';
+import {
+  validateSquadronDeletion,
+  validateRoomAddition,
+  validateRoomDeletion,
+} from './utils/structureSafety';
 
 const queryClient = new QueryClient();
 
@@ -157,6 +165,7 @@ type TNavTab =
   | 'STAFF_MATRIX'
   | 'STAFF_STATEMENT'
   | 'AUDIT'
+  | 'SETTINGS'
   | 'OPERATORS'
   | 'STRUCTURE'
   | 'STAFF_PORTAL';
@@ -178,6 +187,9 @@ export function CanteenApp() {
 
   // Nav Tab state
   const [activeTab, setActiveTab] = useState<TNavTab>('RECRUITS_DAILY');
+
+  // Sub-view within Settings tab
+  const [settingsSubView, setSettingsSubView] = useState<TSettingsSubView>('HUB');
 
   // Contact Modal state
   const [isAdminContactOpen, setIsAdminContactOpen] = useState(false);
@@ -259,7 +271,7 @@ export function CanteenApp() {
   });
 
   // Recruits Pre-Dues state: key is `entry|sqn|room` -> amount
-  const [recruitsPreDues] = useState<Record<string, number>>(() => {
+  const [recruitsPreDues, setRecruitsPreDues] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('baf_recruitsPreDues');
     if (saved) return JSON.parse(saved);
     return {
@@ -271,7 +283,7 @@ export function CanteenApp() {
   });
 
   // Recruits Paid state: key is `entry|sqn|room` -> amount
-  const [recruitsPaid] = useState<Record<string, number>>(() => {
+  const [recruitsPaid, setRecruitsPaid] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('baf_recruitsPaid');
     if (saved) return JSON.parse(saved);
     return {
@@ -431,30 +443,96 @@ export function CanteenApp() {
   };
 
   const handleAddSquadron = (name: string, rooms: string[]) => {
-    if (squadrons.some((s) => s.name === name)) return;
+    if (squadrons.some((s) => s.name.toLowerCase() === name.toLowerCase())) return;
     setSquadrons((prev) => [...prev, { name, rooms, isActive: true }]);
   };
 
+  const handleRenameSquadron = (oldName: string, newName: string) => {
+    const cascade = cascadeSquadronRename(
+      oldName,
+      newName,
+      squadrons,
+      recruitsExpenses,
+      recruitsPreDues,
+      recruitsPaid,
+    );
+
+    setSquadrons(cascade.updatedSquadrons);
+    setRecruitsExpenses(cascade.updatedExpenses);
+    setRecruitsPreDues(cascade.updatedPreDues);
+    setRecruitsPaid(cascade.updatedPaid);
+
+    if (activeSquadron.toLowerCase() === oldName.trim().toLowerCase()) {
+      setActiveSquadron(newName.trim());
+    }
+
+    return {
+      success: true,
+      affectedCount: cascade.affectedLedgerCount,
+    };
+  };
+
+  const handleDeleteSquadron = (name: string) => {
+    const validation = validateSquadronDeletion(name, squadrons);
+    if (!validation.isValid) {
+      return { success: false, error: validation.error };
+    }
+
+    const remaining = squadrons.filter(
+      (s) => s.name.toLowerCase() !== name.trim().toLowerCase(),
+    );
+    setSquadrons(remaining);
+
+    if (activeSquadron.toLowerCase() === name.trim().toLowerCase()) {
+      setActiveSquadron(remaining[0]?.name || '');
+    }
+
+    return { success: true };
+  };
+
   const handleAddRoom = (sqnName: string, roomName: string) => {
+    const sqn = squadrons.find((s) => s.name === sqnName);
+    if (!sqn) return { success: false, error: 'Squadron not found' };
+
+    const validation = validateRoomAddition(roomName, sqn.rooms);
+    if (!validation.isValid) {
+      return { success: false, error: validation.error };
+    }
+
     setSquadrons((prev) =>
       prev.map((s) => {
-        if (s.name === sqnName && !s.rooms.includes(roomName)) {
-          return { ...s, rooms: [...s.rooms, roomName] };
+        if (s.name === sqnName && !s.rooms.includes(roomName.trim())) {
+          return { ...s, rooms: [...s.rooms, roomName.trim()] };
         }
         return s;
       }),
     );
+    return { success: true };
   };
 
   const handleDeleteRoom = (sqnName: string, roomName: string) => {
+    const sqn = squadrons.find((s) => s.name === sqnName);
+    if (!sqn) return { success: false, error: 'Squadron not found' };
+
+    const validation = validateRoomDeletion(roomName, sqn.rooms);
+    if (!validation.isValid) {
+      return { success: false, error: validation.error };
+    }
+
     setSquadrons((prev) =>
       prev.map((s) => {
         if (s.name === sqnName) {
-          return { ...s, rooms: s.rooms.filter((r) => r !== roomName) };
+          return {
+            ...s,
+            rooms: s.rooms.filter(
+              (r) => r.trim().toLowerCase() !== roomName.trim().toLowerCase(),
+            ),
+          };
         }
         return s;
       }),
     );
+    return { success: true };
   };
 
   // Get current active squadron rooms
@@ -534,6 +612,17 @@ export function CanteenApp() {
         </button>
 
         <button
+          className={`nav-tab-btn ${activeTab === 'SETTINGS' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('SETTINGS');
+            setSettingsSubView('HUB');
+          }}
+        >
+          <Settings size={15} />
+          <span>SETTINGS HUB</span>
+        </button>
+
+        <button
           className={`nav-tab-btn ${activeTab === 'OPERATORS' ? 'active' : ''}`}
           onClick={() => setActiveTab('OPERATORS')}
         >
@@ -546,7 +635,7 @@ export function CanteenApp() {
           onClick={() => setActiveTab('STRUCTURE')}
         >
           <Building size={15} />
-          <span>STRUCTURE</span>
+          <span>SQUADRONS &amp; ROOMS</span>
         </button>
 
         <button
@@ -664,27 +753,83 @@ export function CanteenApp() {
           />
         )}
 
-        {/* TAB 6: Military Operator Management */}
+        {/* TAB 6: Unified Settings Hub */}
+        {activeTab === 'SETTINGS' && (
+          <div>
+            {settingsSubView === 'HUB' && (
+              <SettingsHub
+                squadrons={squadrons}
+                operators={operators}
+                entries={entries}
+                activeEntryNo={activeEntry}
+                onNavigateToSquadrons={() => setSettingsSubView('SQUADRONS')}
+                onNavigateToOperators={() => setSettingsSubView('OPERATORS')}
+              />
+            )}
+
+            {settingsSubView === 'SQUADRONS' && (
+              <SquadronManagementView
+                entries={entries}
+                activeEntryNo={activeEntry}
+                onSetActiveEntry={(ent) => setActiveEntry(ent)}
+                onAddEntry={handleAddEntry}
+                squadrons={squadrons}
+                activeSquadronName={activeSquadron}
+                onSelectSquadron={(sqn) => setActiveSquadron(sqn)}
+                onAddSquadron={handleAddSquadron}
+                onRenameSquadron={handleRenameSquadron}
+                onDeleteSquadron={handleDeleteSquadron}
+                onAddRoom={handleAddRoom}
+                onDeleteRoom={handleDeleteRoom}
+                onBackToHub={() => setSettingsSubView('HUB')}
+              />
+            )}
+
+            {settingsSubView === 'OPERATORS' && (
+              <DutyOperatorManagementView
+                currentUser={currentUser}
+                operators={operators}
+                onAddOperator={handleAddOperator}
+                onDeleteOperator={handleDeleteOperator}
+                onBackToHub={() => setSettingsSubView('HUB')}
+              />
+            )}
+          </div>
+        )}
+
+        {/* TAB 7: Dedicated Duty Appointments Page */}
         {activeTab === 'OPERATORS' && (
-          <OperatorAuthManagement
+          <DutyOperatorManagementView
             currentUser={currentUser}
             operators={operators}
             onAddOperator={handleAddOperator}
             onDeleteOperator={handleDeleteOperator}
+            onBackToHub={() => {
+              setActiveTab('SETTINGS');
+              setSettingsSubView('HUB');
+            }}
           />
         )}
 
-        {/* TAB 7: Structure Management */}
+        {/* TAB 8: Dedicated Squadrons & Rooms Page */}
         {activeTab === 'STRUCTURE' && (
-          <StructureManagement
+          <SquadronManagementView
             entries={entries}
             activeEntryNo={activeEntry}
             onSetActiveEntry={(ent) => setActiveEntry(ent)}
             onAddEntry={handleAddEntry}
             squadrons={squadrons}
+            activeSquadronName={activeSquadron}
+            onSelectSquadron={(sqn) => setActiveSquadron(sqn)}
             onAddSquadron={handleAddSquadron}
+            onRenameSquadron={handleRenameSquadron}
+            onDeleteSquadron={handleDeleteSquadron}
             onAddRoom={handleAddRoom}
             onDeleteRoom={handleDeleteRoom}
+            onBackToHub={() => {
+              setActiveTab('SETTINGS');
+              setSettingsSubView('HUB');
+            }}
           />
         )}
 
