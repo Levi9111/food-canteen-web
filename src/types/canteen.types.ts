@@ -36,7 +36,30 @@ export interface ISquadron {
   name: string;
   rooms: string[];
   isActive?: boolean;
+  totalStrength?: number;
+  note?: string;
 }
+
+export type TStrictActionSeverity = 'WARNING' | 'CRITICAL' | 'DANGER';
+
+export type TStrictActionType =
+  | 'RENAME_SQUADRON'
+  | 'DELETE_SQUADRON'
+  | 'REMOVE_ROOM'
+  | 'APPOINT_OPERATOR'
+  | 'REVOKE_OPERATOR';
+
+export interface IStrictWarningConfig {
+  title: string;
+  actionType: TStrictActionType;
+  severity: TStrictActionSeverity;
+  targetIdentifier: string;
+  consequences: string[];
+  requiredConfirmationText?: string;
+}
+
+export type TSettingsSubView = 'HUB' | 'SQUADRONS' | 'OPERATORS';
+
 
 export interface IEntry {
   _id?: string;
